@@ -13,7 +13,15 @@
 #             CPU_LOAD duty cycle (default ~50% per core).
 #   - Runs for DURATION seconds, then exits (frees memory).
 #
-# Usage:   python3 mem-cpu-stress.py     (edit the CONFIGURATION block to tune)
+# Intended target:
+#   Image-AGNOSTIC, pure Python 3 (no stress-ng/apt/apk). Copy it into ANY pod
+#   (broker or ms-tod-app) and run it there. Unlike the stress-ng scripts it is
+#   deliberately SAFE (sub-limit) and will NOT trigger an OOM/restart — use it
+#   for load/observability testing, not for recovery-time experiments.
+#
+# Usage:   kubectl cp mem-cpu-stress.py <ns>/<pod>:/tmp/ && \
+#          kubectl exec -n <ns> <pod> -- python3 /tmp/mem-cpu-stress.py
+#          (edit the CONFIGURATION block to tune)
 # Tunables: CPU_LOAD (0.0-1.0), DURATION (s), MEMORY_FRACTION (0.0-1.0).
 #
 # NOTE (review): Because of Python's GIL, the threaded CPU load is effectively

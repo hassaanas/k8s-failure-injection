@@ -6,6 +6,12 @@
 #          takes to reschedule and make a fresh pod Ready again (recovery time /
 #          MTTR). Companion to the cpu/mem stress fault injectors.
 #
+# Intended target / image:
+#   Image-AGNOSTIC — it only deletes a pod, so it works on any workload
+#   regardless of base image (no in-pod tooling needed). Defaults to the
+#   "broker" pod (eclipse-mosquitto); set POD_MATCH=ms-speed (etc.) to target a
+#   ms-tod-app microservice, or any other pod name substring.
+#
 # What it does (per iteration, $RUNS iterations total):
 #   1. Locates the current broker pod and records its UID + delete time.
 #   2. Deletes the pod (the controller, e.g. Deployment/StatefulSet, recreates
