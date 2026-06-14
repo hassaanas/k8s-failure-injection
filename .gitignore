@@ -1,0 +1,19 @@
+# Experiment results / generated data (kept on disk, not in git)
+results/**/*.txt
+results/**/*.log
+*.log
+mqtt_log*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.python-version
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
