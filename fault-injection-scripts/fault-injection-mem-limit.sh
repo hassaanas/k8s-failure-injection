@@ -1,4 +1,32 @@
 #!/bin/bash
+# =============================================================================
+# Script:  fault-injection-mem-limit.sh
+# Purpose: Repeatedly inject a memory-exhaustion fault into the MQTT "broker"
+#          pod of the "tod" namespace (MicroK8s) to test the pod's recovery /
+#          restart behaviour and measure its recovery time.
+#
+# Intended target / image:
+#   The "broker" pod  ->  image eclipse-mosquitto:latest
+#   Base: ALPINE. The mosquitto image does NOT ship stress-ng, so this script
+#   MUST install it in-pod via "apk add" (Alpine package manager) before use.
+#   This requires in-pod network egress to the Alpine repositories.
+#   NOTE: To stress the DEBIAN ms-tod-app microservices instead (which already
+#   have stress-ng baked in), use fault-injection-mem-limit-app.sh — it skips
+#   the install step entirely.
+#
+# What it does (per iteration, 5 iterations total):
+#   1. Locates the running broker pod in the "tod" namespace.
+#   2. Installs stress-ng inside the pod (Alpine "apk add").
+#   3. Runs a memory stressor (--vm 1 --vm-bytes 200M --timeout 2s) to exceed
+#      the pod's memory limit (100Mi) and trigger an OOM-kill / restart.
+#   4. Waits, then reads the new pod's start time from its logs and prints the
+#      injection time vs. recovery time so MTTR can be computed.
+#
+# Usage:   ./fault-injection-mem-limit.sh
+# Requires: microk8s, kubectl access to the "tod" namespace, the "broker" pod,
+#           network access inside the pod for "apk add".
+# Tunables: mtbf=300  (seconds between runs);  loop count {1..5}.
+# =============================================================================
 d1=`date`
 echo "Starting at $d1"
 mtbf=300
