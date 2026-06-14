@@ -1,9 +1,37 @@
-# k8s-failure-injection
+# k8s-failure-injection — Kubernetes Chaos Engineering & Fault Injection Toolkit
 
-Fault-injection scripts and measurement clients for evaluating the resilience of
-the **ToD (Tele-operated Driving)** application running on Kubernetes (MicroK8s).
-The tooling injects resource/availability faults into the MQTT `broker` pod and
-measures the impact on message delivery (latency, jitter, recovery time).
+> Lightweight **chaos engineering / fault injection** scripts for **Kubernetes**
+> (and **MicroK8s**) that inject **memory (OOM)**, **CPU**, and **pod-delete**
+> faults, then measure **service availability**, **recovery time (MTTR)**, and
+> **MQTT** message **latency / jitter** — used for **resilience testing** of a
+> safety-critical **IoT / teleoperated driving (ToD)** microservices application.
+
+Fault-injection scripts and measurement clients for evaluating the **resilience**
+and **service availability** of microservices running on **Kubernetes
+(MicroK8s)**. The toolkit deliberately breaks pods — exhausting memory with
+`stress-ng` to force **OOM-kills / container restarts**, or deleting pods to test
+**rescheduling** — and measures the impact on real-time **MQTT** message delivery
+(latency, jitter) and **mean time to recovery (MTTR)**. The reference workload is
+a **tele-operated driving (ToD)** cellular-IoT application, but the scripts work
+against any pod.
+
+**Keywords:** Kubernetes · chaos engineering · fault injection · resilience
+testing · reliability engineering · MicroK8s · kubectl · OOM kill · memory
+pressure · CPU stress · stress-ng · pod failure · container restart · MTTR ·
+high availability · MQTT · Mosquitto · IoT · edge computing · microservices ·
+SRE · DevOps · teleoperated / tele-operated driving · 5G / cellular IoT.
+
+## Features
+
+- **Memory-exhaustion (OOM) fault injection** via `stress-ng` — for both
+  Alpine (`eclipse-mosquitto` broker) and Debian (`ms-tod-app`) pods.
+- **Pod-delete fault injection** to test Kubernetes self-healing / rescheduling.
+- **Automated recovery-time (MTTR) measurement** — container-restart and
+  pod-recreation detection via `restartCount` / pod UID polling.
+- **MQTT latency & jitter measurement** clients (publish/subscribe timestamping).
+- **Dependency-free in-pod stressor** (pure-Python CPU + memory load, no
+  `stress-ng`/`apt`/`apk` required).
+- **Repeatable experiment loops** with configurable **MTBF**, run count, and load.
 
 ## References
 
@@ -17,15 +45,16 @@ The following two research papers explain the use case and experimentation. Plea
 
 ```
 k8s-failure-injection/
-├── fault-injection-scripts/   # Bash scripts that inject faults into pods
-│   ├── fault-injection-cpu-limit.sh   # memory stress (see note) of broker pod
-│   ├── fault-injection-mem-limit.sh   # memory stress of broker pod (OOM/restart)
-│   └── fault-injection-pod-delete.sh  # placeholder: delete-pod recovery test
-├── clients/                   # Python MQTT / stress tooling
+├── fault-injection-scripts/   # Fault injectors / stress payloads
+│   ├── fault-injection-cpu-limit.sh       # mem stress of BROKER pod (apk install)
+│   ├── fault-injection-mem-limit.sh       # mem stress of BROKER pod (apk install)
+│   ├── fault-injection-mem-limit-app.sh   # mem stress of ms-tod-app pods (no install)
+│   ├── fault-injection-pod-delete.sh      # delete any pod, measure recovery (MTTR)
+│   └── mem-cpu-stress.py                  # in-pod, pure-Python CPU + memory stressor
+├── clients/                   # Python MQTT measurement clients
 │   ├── amf-sub.py             # subscribe to set/<topic> and log messages
 │   ├── pub-timestamp.py       # publish timestamps every 100 ms (latency source)
-│   ├── sub-timestamp.py       # measure inter-arrival gap / jitter
-│   └── mem-cpu-stress.py      # in-pod, pure-Python CPU + memory stressor
+│   └── sub-timestamp.py       # measure inter-arrival gap / jitter
 └── results/                   # Experiment output (git-ignored data)
     ├── obu/                   # on-board-unit experiment logs
     ├── edge/                  # edge experiment logs
@@ -94,31 +123,70 @@ flags any delivery gap > 110 ms:
 
 ### 3. Inject a fault
 
-While the measurement clients run, inject a fault into the broker pod:
+Pick the injector that matches the **target pod's image** (this matters because
+`stress-ng` must be available inside the pod):
+
+| Target pod | Image / base | Injector | In-pod install? |
+| ---------- | ------------ | -------- | --------------- |
+| `broker` | `eclipse-mosquitto` (Alpine) | `fault-injection-mem-limit.sh` (or `-cpu-limit.sh`) | Yes — `apk add stress-ng` (needs in-pod network) |
+| `ms-tod-app` (`ms-speed`, `ms-direction`, `ms-cruise`) | `ms-tod-app:v1` (Debian, `python:3.11-slim`) | `fault-injection-mem-limit-app.sh` | No — `stress-ng` is baked into the image |
+| any pod | image-agnostic | `fault-injection-pod-delete.sh` | No — only deletes the pod |
+
+Stress the **broker** (installs stress-ng in-pod):
 
 ```bash
 ./fault-injection-scripts/fault-injection-mem-limit.sh
 ```
 
-Each run stresses the broker's memory to trigger an OOM-kill/restart, then
-reports the injection time vs. the recovered pod's start time so recovery time
-(MTTR) can be computed. Tunables (`mtbf`, iteration count) are at the top of the
-script.
+Stress a **ms-tod-app microservice** (uses the pre-baked stress-ng, no install):
+
+```bash
+./fault-injection-scripts/fault-injection-mem-limit-app.sh                 # default ms-speed
+POD_MATCH=ms-direction ./fault-injection-scripts/fault-injection-mem-limit-app.sh
+```
+
+Delete a pod and measure recovery (works on any pod):
+
+```bash
+./fault-injection-scripts/fault-injection-pod-delete.sh                    # default broker
+POD_MATCH=ms-speed ./fault-injection-scripts/fault-injection-pod-delete.sh
+```
+
+Each injector loops `$RUNS` times and reports the per-run recovery time and an
+average MTTR. Tunables are env vars / variables at the top of each script.
 
 ### 4. In-pod stress (alternative)
 
 To stress a pod from the inside without `stress-ng`, copy `mem-cpu-stress.py`
 into the pod and run it; tune `CPU_LOAD`, `DURATION`, and `MEMORY_FRACTION` in
-its configuration block.
+its configuration block. Note it is deliberately *safe* (sub-limit) and will
+**not** trigger an OOM/restart.
 
 ## Known issues / notes
 
 - `fault-injection-cpu-limit.sh` is currently identical to the mem-limit script
   and stresses **memory**, not CPU. Adjust it to use `stress-ng --cpu` for a true
   CPU fault.
-- `fault-injection-pod-delete.sh` is a documented placeholder (no logic yet); a
-  suggested skeleton is included in the file.
-- The bash scripts assume an Alpine broker image with internet access and use
-  fragile log parsing to find the recovered pod's start time.
+- The broker injectors `apk add stress-ng` at runtime, so the broker pod needs
+  in-pod network egress; the app injector avoids this by relying on the baked-in
+  binary.
+- `fault-injection-mem-limit-app.sh` measures a **container restart in place**
+  (same pod, `RESTARTS` increments) — not pod recreation. On cgroup v2 with
+  `memory.oom.group=1` the whole container is OOM-killed and restarts; on older
+  cgroup v1 the killer may only kill the `stress-ng` child and leave PID 1
+  alive (no restart). If that happens, lower the pod's memory limit or raise
+  `VM_BYTES`/`VM_WORKERS` (see the script's CAVEAT).
+- Detection methods differ by script: the original broker scripts parse logs
+  for the recovered pod's start time; `*-app.sh` watches the container's
+  `restartCount`; `pod-delete.sh` watches for a new pod UID (pod recreation).
 - The Python clients use the deprecated paho-mqtt v1 callback API; they may need
   updating for paho-mqtt 2.x.
+
+## Keywords
+
+Kubernetes fault injection, Kubernetes chaos engineering, MicroK8s chaos testing,
+pod failure simulation, OOM kill testing, memory limit stress test, CPU stress
+Kubernetes, container restart, pod delete recovery, mean time to recovery (MTTR),
+service availability measurement, MQTT latency benchmark, Mosquitto broker
+failure, IoT resilience, edge computing reliability, microservices fault
+tolerance, SRE/DevOps testing, teleoperated driving, 5G cellular IoT.
