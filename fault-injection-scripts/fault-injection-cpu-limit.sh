@@ -1,4 +1,27 @@
 #!/bin/bash
+# =============================================================================
+# Script:  fault-injection-cpu-limit.sh
+# Purpose: Repeatedly inject resource-exhaustion faults into the MQTT "broker"
+#          pod of the "tod" namespace (MicroK8s) to test pod recovery/restart
+#          behaviour and measure recovery time.
+#
+# What it does (per iteration, 5 iterations total):
+#   1. Locates the running broker pod in the "tod" namespace.
+#   2. Installs stress-ng inside the pod (Alpine "apk add").
+#   3. Runs a memory stressor (--vm 1 --vm-bytes 200M --timeout 2s) to push the
+#      pod past its limits and trigger an OOM-kill / restart.
+#   4. Waits, then reads the new pod's start time from its logs and prints the
+#      injection time vs. recovery time so MTTR can be computed.
+#
+# Usage:   ./fault-injection-cpu-limit.sh
+# Requires: microk8s, kubectl access to the "tod" namespace, a "broker" pod,
+#           network access inside the pod for "apk add".
+# Tunables: mtbf=300  (seconds between runs);  loop count {1..5}.
+#
+# NOTE (review): Despite the "cpu-limit" name, this script is identical to
+#   fault-injection-mem-limit.sh and stresses MEMORY, not CPU. See the review
+#   notes in chat for known issues (typos, brittle log parsing, etc.).
+# =============================================================================
 d1=`date`
 echo "Starting at $d1"
 mtbf=300
